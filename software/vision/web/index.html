@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Detector de uñas</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: system-ui, sans-serif;
+      background: #11171d;
+      color: #f4f7f8;
+      --muted: #aab9c2;
+      --border: #34414c;
+      --accent: #9aebc4;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; }
+    main { max-width: 72rem; margin: auto; padding: clamp(1.25rem, 5vw, 4rem); }
+    h1 { font-size: clamp(2.25rem, 6vw, 4rem); letter-spacing: -.055em; margin: 0; }
+    p { line-height: 1.55; color: var(--muted); }
+    header > p { margin-top: .55rem; }
+    .upload {
+      display: flex; align-items: center; justify-content: space-between; gap: 1rem;
+      flex-wrap: wrap; margin-top: 2rem; border: 1px dashed var(--border);
+      border-radius: 1rem; padding: 1.25rem; background: #19232a;
+    }
+    .upload[data-dragging] { border-color: var(--accent); background: #203630; }
+    .upload p { margin: .25rem 0 0; font-size: .9rem; }
+    button, a.download {
+      font: inherit; font-weight: 700; background: var(--accent); color: #142921;
+      border: 0; border-radius: .6rem; padding: .7rem 1rem; cursor: pointer;
+      text-decoration: none;
+    }
+    button:focus-visible, a:focus-visible { outline: 3px solid white; outline-offset: 4px; }
+    #status { min-height: 1.6em; overflow-wrap: anywhere; }
+    #status[data-error] { color: #ffb8a7; }
+    .images { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+    figure {
+      margin: 0; border: 1px solid var(--border); border-radius: .85rem;
+      background: #19232a; overflow: hidden;
+    }
+    figcaption { padding: .8rem 1rem; font-size: .95rem; font-weight: 650; }
+    img { display: block; width: 100%; height: clamp(12rem, 38vw, 29rem); object-fit: contain; background: #0e1318; }
+    .actions { display: flex; margin-top: 1rem; }
+    [hidden] { display: none !important; }
+    @media (max-width: 42rem) { .images { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>Detector de uñas</h1>
+      <p>Sube una foto de una mano para ver las uñas detectadas y sus centros.</p>
+    </header>
+    <div class="upload" id="upload">
+      <div>
+        <strong>Arrastra una imagen aquí</strong>
+        <p>JPG, PNG o WebP · Hasta 15 MB</p>
+      </div>
+      <input type="file" id="file" accept="image/jpeg,image/png,image/webp" hidden>
+      <button type="button" id="pick">Elegir imagen</button>
+    </div>
+    <p id="status" role="status" aria-live="polite"></p>
+    <section class="images" aria-label="Vista previa">
+      <figure id="original-panel" hidden>
+        <figcaption>Original</figcaption>
+        <img id="original" alt="Imagen subida">
+      </figure>
+      <figure id="result-panel" hidden>
+        <figcaption>Uñas detectadas</figcaption>
+        <img id="result" alt="Imagen con máscaras verdes y centros marcados en rojo">
+      </figure>
+    </section>
+    <div class="actions">
+      <a class="download" id="download" download="unas-detectadas.jpg" hidden>Descargar resultado</a>
+    </div>
+  </main>
+  <script>
+    const byId = (id) => document.getElementById(id);
+    const picker = byId("file");
+    const upload = byId("upload");
+    const status = byId("status");
+    let originalUrl;
+    let activeRequest;
+
+    function showStatus(message, error = false) {
+      status.textContent = message;
+      status.toggleAttribute("data-error", error);
+    }
+
+    async function detect(file) {
+      if (!file) return;
+      activeRequest?.abort();
+      const request = new AbortController();
+      activeRequest = request;
+      byId("original-panel").hidden = true;
+      byId("result-panel").hidden = true;
+      byId("download").hidden = true;
+      if (originalUrl) URL.revokeObjectURL(originalUrl);
+      if (!file.size || file.size > 15 * 1024 * 1024) {
+        showStatus("Selecciona una imagen de hasta 15 MB.", true);
+        return;
+      }
+      originalUrl = URL.createObjectURL(file);
+      byId("original").src = originalUrl;
+      byId("original-panel").hidden = false;
+      showStatus("Analizando " + file.name + "…");
+      try {
+        const response = await fetch("/detect", { method: "POST", body: file, signal: request.signal });
+        const result = await response.json();
+        if (request.signal.aborted) return;
+        if (!response.ok) throw new Error(result.error || "No se pudo analizar la imagen.");
+        if (result.count === 0) {
+          showStatus("No se detectaron uñas. Prueba con una foto nítida tomada desde arriba.");
+          return;
+        }
+        byId("result").src = result.image;
+        byId("result-panel").hidden = false;
+        byId("download").href = result.image;
+        byId("download").hidden = false;
+        showStatus(result.count === 1 ? "1 uña detectada." : result.count + " uñas detectadas.");
+      } catch (error) {
+        if (!request.signal.aborted) showStatus(error.message, true);
+      }
+    }
+
+    byId("pick").addEventListener("click", () => picker.click());
+    picker.addEventListener("change", () => {
+      detect(picker.files[0]);
+      picker.value = "";
+    });
+    upload.addEventListener("dragover", (event) => {
+      event.preventDefault();
+      upload.toggleAttribute("data-dragging", true);
+    });
+    upload.addEventListener("dragleave", () => upload.removeAttribute("data-dragging"));
+    upload.addEventListener("drop", (event) => {
+      event.preventDefault();
+      upload.removeAttribute("data-dragging");
+      detect(event.dataTransfer.files[0]);
+    });
+  </script>
+</body>
+</html>

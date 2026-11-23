@@ -1,0 +1,16 @@
+{
+  "simulation_only": true,
+  "arm": {
+    "lengths_mm": [110, 110],
+    "origin_mm": [0, 0],
+    "workspace_mm": [0, 0, 200, 150],
+    "joint_limits_deg": [[-120, 120], [0, 180]],
+    "elbow": 1
+  },
+  "calibration": {
+    "image_size_px": [640, 480],
+    "image_px": [[0, 479], [639, 479], [639, 0], [0, 0]],
+    "world_mm": [[0, 0], [200, 0], [200, 150], [0, 150]]
+  },
+  "spot_radius_mm": 5
+}
